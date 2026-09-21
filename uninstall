@@ -1,0 +1,14 @@
+#!/bin/bash
+# Remove Soundstage CLI and the plugin.
+set -euo pipefail
+
+PLUGIN_ID="payton.soundstage"
+PLUGINS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins"
+SCRIPT="$PLUGINS_DIR/$PLUGIN_ID/scripts/omarchy-soundstage"
+
+if [[ -x $SCRIPT ]]; then
+  exec "$SCRIPT" unapply --purge
+fi
+
+echo "omarchy-soundstage: plugin is not installed" >&2
+exit 1

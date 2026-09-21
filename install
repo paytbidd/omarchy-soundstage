@@ -1,0 +1,15 @@
+#!/bin/bash
+# One-shot install: clone payton.soundstage and put the CLI on PATH.
+set -euo pipefail
+
+PLUGIN_URL="https://github.com/paytbidd/omarchy-soundstage.git"
+PLUGIN_ID="payton.soundstage"
+PLUGINS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins"
+
+if [[ ! -d $PLUGINS_DIR/$PLUGIN_ID/.git ]]; then
+  omarchy plugin add "$PLUGIN_URL" --yes --enable
+else
+  omarchy plugin enable "$PLUGIN_ID" >/dev/null 2>&1 || true
+fi
+
+exec "$PLUGINS_DIR/$PLUGIN_ID/scripts/omarchy-soundstage" apply
