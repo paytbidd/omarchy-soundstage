@@ -111,6 +111,59 @@ class SinkTests(unittest.TestCase):
             "analog",
         )
 
+    def test_unplugged_hdmi_does_not_stay_default(self):
+        self.assertEqual(
+            soundstage.laptop_sink(
+                "analog",
+                None,
+                "alsa_output.pci-1.hdmi-stereo",
+                hdmi_usable=False,
+            ),
+            "analog",
+        )
+
+    def test_has_external_monitor(self):
+        monitors = [
+            {"name": "eDP-1", "disabled": False},
+            {"name": "HDMI-A-1", "disabled": False},
+        ]
+        self.assertTrue(soundstage.has_external_monitor(monitors, "eDP-1"))
+        self.assertFalse(
+            soundstage.has_external_monitor(
+                [{"name": "eDP-1", "disabled": False}], "eDP-1"
+            )
+        )
+        self.assertFalse(
+            soundstage.has_external_monitor(
+                [
+                    {"name": "eDP-1", "disabled": False},
+                    {"name": "HDMI-A-1", "disabled": True},
+                ],
+                "eDP-1",
+            )
+        )
+
+    def test_reclaim_default_when_display_gone(self):
+        self.assertTrue(
+            soundstage.should_reclaim_default(
+                "alsa_output.pci-1.hdmi-stereo",
+                "analog",
+                "alsa_output.pci-1.hdmi-stereo",
+                False,
+            )
+        )
+        self.assertFalse(
+            soundstage.should_reclaim_default(
+                "alsa_output.pci-1.hdmi-stereo",
+                "analog",
+                "alsa_output.pci-1.hdmi-stereo",
+                True,
+            )
+        )
+        self.assertFalse(
+            soundstage.should_reclaim_default("analog", "analog", "hdmi", False)
+        )
+
 
 class DescendantsTests(unittest.TestCase):
     def test_walks_tree(self):

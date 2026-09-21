@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "payton.soundstage",
   "name": "Soundstage",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "Payton Biddington",
   "description": "Media audio follows the screen the player is on. YouTube, Spotify, Apple Music, mpv, and other players use the speakers of that monitor.",
   "homepage": "https://github.com/paytbidd/omarchy-soundstage",

@@ -68,4 +68,5 @@ or:
 ## Notes
 
 - HDMI volume is independent of the laptop volume keys. If the monitor is quiet, raise that sink (Omarchy audio output switch, or `pactl set-sink-volume`).
+- Unplugging the external display restores the laptop speakers as the default output. NVIDIA HDMI audio often stays listed as available after the monitor is gone; Soundstage keys off Hyprland having an external monitor, not that leftover sink, so volume keys keep controlling the laptop.
 - Apple Music already uses its own Chromium profile, so it is a distinct stream. YouTube launched as an Omarchy webapp is usually its own process; opening regular Chromium while that window is open can share the process, and then browser audio would follow YouTube.

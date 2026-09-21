@@ -265,6 +265,23 @@ def sink_available(sink: dict) -> bool:
     return any(p.get("availability") != "not available" for p in ports)
 
 
+def is_hdmi_sink(sink: dict) -> bool:
+    name = str(sink.get("name") or "")
+    props = sink.get("properties") or {}
+    profile = str(props.get("device.profile.name") or "")
+    return is_display_sink_name(name) or "hdmi" in profile.lower() or "displayport" in profile.lower()
+
+
+def is_display_sink_name(name: str) -> bool:
+    lowered = name.lower()
+    return (
+        ".hdmi" in lowered
+        or "hdmi-" in lowered
+        or ".dp-" in lowered
+        or "displayport" in lowered
+    )
+
+
 def classify_sinks(sinks: list[dict]) -> tuple[str | None, str | None]:
     analog = None
     hdmi = None
@@ -277,15 +294,80 @@ def classify_sinks(sinks: list[dict]) -> tuple[str | None, str | None]:
         form = str(props.get("device.form_factor") or "")
         if form == "internal" or "analog" in profile or ".analog-" in name:
             analog = analog or name
-        if "hdmi" in profile.lower() or ".hdmi" in name:
+        if is_hdmi_sink(sink):
             hdmi = hdmi or name
     return analog, hdmi
 
 
-def laptop_sink(analog: str | None, hdmi: str | None, default: str | None) -> str | None:
+def has_external_monitor(monitors: list[dict], laptop: str) -> bool:
+    for mon in monitors:
+        if mon.get("disabled"):
+            continue
+        name = str(mon.get("name") or "")
+        if name and name != laptop:
+            return True
+    return False
+
+
+def laptop_sink(
+    analog: str | None,
+    hdmi: str | None,
+    default: str | None,
+    *,
+    hdmi_usable: bool = True,
+) -> str | None:
+    if not hdmi_usable and default and analog:
+        if default == hdmi or is_display_sink_name(default):
+            return analog
     if default and default != hdmi:
         return default
     return analog
+
+
+def sink_by_name(sinks: list[dict], name: str | None) -> dict | None:
+    if not name:
+        return None
+    for sink in sinks:
+        if sink.get("name") == name:
+            return sink
+    return None
+
+
+def sink_node_id(sink: dict) -> str | None:
+    props = sink.get("properties") or {}
+    for key in ("object.id", "node.id"):
+        value = props.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def should_reclaim_default(
+    default: str | None,
+    analog: str | None,
+    hdmi: str | None,
+    hdmi_usable: bool,
+) -> bool:
+    if hdmi_usable or not analog or not default or default == analog:
+        return False
+    return default == hdmi or is_display_sink_name(default)
+
+
+def set_session_sink(sink: dict) -> bool:
+    name = sink.get("name")
+    if not name:
+        return False
+    node_id = sink_node_id(sink)
+    if node_id:
+        try:
+            run(["wpctl", "set-default", node_id])
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    try:
+        proc = run(["pactl", "set-default-sink", name])
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
 
 
 def default_sink_name() -> str | None:
@@ -410,9 +492,36 @@ def apply_once() -> list[str]:
         return actions
 
     analog, hdmi = classify_sinks(sinks)
-    internal = laptop_sink(analog, hdmi, default_sink_name())
     laptop = laptop_monitor_name(monitors)
+    hdmi_usable = bool(hdmi) and has_external_monitor(monitors, laptop)
+    routing_hdmi = hdmi if hdmi_usable else None
+    default = default_sink_name()
+    internal = laptop_sink(analog, routing_hdmi, default, hdmi_usable=hdmi_usable)
     sinks_by_index = {s.get("index"): s.get("name") for s in sinks}
+
+    if should_reclaim_default(default, analog, hdmi, hdmi_usable):
+        analog_sink = sink_by_name(sinks, analog)
+        if analog_sink and set_session_sink(analog_sink):
+            msg = f"display unplugged: default {default} -> {analog}"
+            actions.append(msg)
+            log.info(msg)
+            default = analog
+            internal = analog
+        for stream in inputs:
+            props = stream.get("properties") or {}
+            app = props.get("application.name") or ""
+            if not app or app in SKIP_APPS:
+                continue
+            current = sinks_by_index.get(stream.get("sink"))
+            index = stream.get("index")
+            if index is None or not analog or current == analog:
+                continue
+            if current == hdmi or (current and is_display_sink_name(str(current))):
+                if move_input(int(index), analog):
+                    msg = f"display unplugged: stream #{index} -> {analog}"
+                    actions.append(msg)
+                    log.info(msg)
+
     cmap = proc_children()
     contains, classes, binaries = load_user_matchers()
 
@@ -425,13 +534,15 @@ def apply_once() -> list[str]:
         if pid <= 0:
             continue
         target, mon_name = target_for_monitor(
-            monitor_for_client(client, monitors), laptop, hdmi, internal
+            monitor_for_client(client, monitors), laptop, routing_hdmi, internal
         )
         if not target:
             continue
         mapping = (target, label_for(client), mon_name)
         for member in descendants(pid, cmap):
-            pid_to_target[member] = prefer_external(pid_to_target.get(member), mapping, hdmi)
+            pid_to_target[member] = prefer_external(
+                pid_to_target.get(member), mapping, routing_hdmi
+            )
 
     for stream in inputs:
         props = stream.get("properties") or {}
@@ -463,8 +574,14 @@ def status_text() -> str:
     sinks = pactl_json(["list", "sinks"]) or []
     inputs = pactl_json(["list", "sink-inputs"]) or []
     analog, hdmi = classify_sinks(sinks if isinstance(sinks, list) else [])
-    internal = laptop_sink(analog, hdmi, default_sink_name())
     laptop = laptop_monitor_name(monitors if isinstance(monitors, list) else [])
+    hdmi_usable = bool(hdmi) and has_external_monitor(
+        monitors if isinstance(monitors, list) else [], laptop
+    )
+    routing_hdmi = hdmi if hdmi_usable else None
+    internal = laptop_sink(
+        analog, routing_hdmi, default_sink_name(), hdmi_usable=hdmi_usable
+    )
     cmap = proc_children()
     sinks_by_index = {
         s.get("index"): s.get("name") for s in (sinks if isinstance(sinks, list) else [])
@@ -472,7 +589,8 @@ def status_text() -> str:
     lines = [
         f"laptop monitor: {laptop}",
         f"laptop sink:    {internal or '-'}",
-        f"hdmi sink:      {hdmi or '-'}",
+        f"hdmi sink:      {hdmi or '-'}"
+        + ("" if hdmi_usable else " (no external display)"),
         "",
     ]
     if not isinstance(clients, list):
