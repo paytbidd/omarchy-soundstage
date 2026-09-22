@@ -13,12 +13,6 @@ omarchy plugin add https://github.com/paytbidd/omarchy-soundstage.git --enable
 ~/.config/omarchy/plugins/payton.soundstage/scripts/omarchy-soundstage apply
 ```
 
-Or:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/paytbidd/omarchy-soundstage/main/install | bash
-```
-
 `apply` puts `omarchy-soundstage` on your PATH and retires the earlier one-off `omarchy-monitor-audio` unit if it is present. Enabling the plugin starts the daemon.
 
 ## What it matches
@@ -56,14 +50,11 @@ omarchy-soundstage run      # daemon (the plugin service already runs this)
 ## Uninstall
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/paytbidd/omarchy-soundstage/main/uninstall | bash
+~/.config/omarchy/plugins/payton.soundstage/scripts/omarchy-soundstage unapply
+omarchy plugin remove payton.soundstage
 ```
 
-or:
-
-```bash
-~/.config/omarchy/plugins/payton.soundstage/scripts/omarchy-soundstage unapply --purge
-```
+`unapply` takes `omarchy-soundstage` off PATH and retires the earlier one-off `omarchy-monitor-audio` unit if it is present. `omarchy plugin remove` uninstalls the plugin.
 
 ## Notes
 
